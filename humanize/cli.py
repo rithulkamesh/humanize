@@ -44,11 +44,6 @@ def main():
         type=str,
         help="Output file path (writes to stdout if not provided)",
     )
-    humanize_parser.add_argument(
-        "--no-llm",
-        action="store_true",
-        help="Disable optional local LLM refinement",
-    )
 
     # version command
     subparsers.add_parser(

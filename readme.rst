@@ -47,8 +47,6 @@ What Humanize does not do
 - It does not train models on user input
 - It does not run background processes or telemetry
 
-Optional support for local language models is available for sentence-level refinement, but it is disabled by default and clearly separated from the core system.
-
 Offline-first by design
 -----------------------
 

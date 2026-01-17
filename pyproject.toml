@@ -1,6 +1,6 @@
 [project]
 name = "humanize"
-version = "0.1.0"
+version = "1.0.0"
 description = "An open-source, rule-based system for humanizing text using open datasets and deterministic transformations."
 readme = "readme.rst"
 requires-python = ">=3.13"
@@ -16,15 +16,7 @@ classifiers = [
 authors = [{ name = "Rithul Kamesh", email = "hi@rithul.dev" }]
 maintainers = [{ name = "Rithul Kamesh", email = "hi@rithul.dev" }]
 
-dependencies = [
-    "langchain>=1.2.4",
-    "langchain-openai>=1.1.7",
-    "python-dotenv>=1.2.1",
-    "qdrant-client>=1.16.2",
-    "numpy>=1.26.0",
-    "polars>=1.37.1",
-    "uuid-utils>=0.13.0",
-]
+dependencies = ["numpy>=1.26.0", "polars>=1.37.1", "uuid-utils>=0.13.0"]
 
 [project.optional-dependencies]
 dev = [
@@ -34,11 +26,7 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.5.0",
 ]
-local-llm = [
-    "transformers>=4.35.0",
-    "torch>=2.1.0",
-    "langchain-community>=0.3.0",
-]
+
 web = ["fastapi>=0.104.0", "uvicorn>=0.24.0"]
 
 [project.scripts]
@@ -49,7 +37,7 @@ requires = ["setuptools>=68.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-where = ["humanize"]
+where = ["."]
 
 [tool.black]
 line-length = 100

@@ -15,7 +15,6 @@ Humanize follows a few core principles that guide all contributions:
 - Offline-first by default
 - Deterministic behavior over probabilistic behavior
 - Open datasets and inspectable logic
-- Minimal reliance on large language models
 - No hidden compute or background services
 
 If a change conflicts with these principles, it is unlikely to be accepted.
@@ -60,17 +59,6 @@ If you contribute text data:
 - Preserve original punctuation and formatting
 
 You may request removal of your contributed data at any time.
-
-Optional LLM integrations
--------------------------
-
-Local language model integrations are allowed, but must follow these rules:
-- Disabled by default
-- Clearly isolated from the core pipeline
-- No network calls unless explicitly configured by the user
-- Sentence-level access only
-
-LLMs are considered optional polish, not a dependency.
 
 Code style and scope
 --------------------
