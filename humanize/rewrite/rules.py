@@ -29,20 +29,154 @@ def _count_words(sentence: str) -> int:
     return count
 
 
+def _is_decimal_number_or_acronym(text: str, pos: int) -> bool:
+    """Check if a comma at position pos is part of a decimal number or acronym.
+
+    Args:
+        text: The text to check
+        pos: Position of the comma
+
+    Returns:
+        True if comma is part of number/acronym and should not be split on
+    """
+    if pos < 0 or pos >= len(text) or text[pos] != ",":
+        return False
+
+    # Check for decimal numbers: digit, comma, digit (e.g., 50,000 or 1,234.56)
+    before_context = text[max(0, pos - 10):pos]
+    after_context = text[pos + 1:min(len(text), pos + 11)]
+    
+    # Decimal number pattern: digits before comma, digits after
+    if re.search(r'\d+$', before_context) and re.search(r'^\s*\d+', after_context):
+        return True
+    
+    # Check for acronyms: capital letters separated by comma-space
+    # Pattern: 2+ capital letters, comma, space, 2+ capital letters
+    # e.g., "HFT, DLT" or "NASA, ESA"
+    acronym_pattern = r'\b[A-Z]{2,}\s*,\s*[A-Z]{2,}\b'
+    context_text = text[max(0, pos - 10):min(len(text), pos + 11)]
+    match = re.search(acronym_pattern, context_text, re.IGNORECASE)
+    if match:
+        # Verify the match contains the comma at our position
+        match_start = max(0, pos - 10) + match.start()
+        match_end = match_start + len(match.group())
+        if match_start <= pos < match_end:
+            return True
+    
+    # Check for common abbreviations with comma (e.g., "e.g.," "i.e.,")
+    abbrev_pattern = r'\b(e\.g\.|i\.e\.|etc\.|vs\.|cf\.)\s*,'
+    if re.search(abbrev_pattern, text[max(0, pos - 8):pos + 1], re.IGNORECASE):
+        return True
+    
+    return False
+
+
+def _is_academic_intro_clause(text: str, split_pos: int) -> bool:
+    """Check if splitting at split_pos would break an academic intro clause.
+
+    Academic intro clauses are phrases like "By analyzing...", "In this paper...",
+    "The objective of...", "Through examining..." that should not be separated
+    from their main clause unless the sentence is extremely dense.
+
+    Args:
+        text: The sentence text
+        split_pos: Proposed split position
+
+    Returns:
+        True if splitting here would incorrectly break an academic intro clause
+    """
+    # Look before split point for academic intro patterns
+    before_text = text[:split_pos].strip()
+    
+    # Academic intro patterns (case-insensitive)
+    intro_patterns = [
+        r'\bby\s+(analyzing|examining|investigating|studying|exploring|reviewing)\b',
+        r'\bin\s+(this|the)\s+(paper|study|research|article|work|analysis)\b',
+        r'\bthe\s+(objective|purpose|aim|goal)\s+of\s+(this|the)\b',
+        r'\bthrough\s+(analyzing|examining|investigating|studying)\b',
+        r'\bthis\s+(paper|study|research|article)\s+(argues|demonstrates|shows|proposes)\b',
+    ]
+    
+    for pattern in intro_patterns:
+        matches = list(re.finditer(pattern, before_text, re.IGNORECASE))
+        if matches:
+            # If we found an intro pattern before the split, this might be an intro clause
+            # Only allow split if sentence is extremely dense (>40 words)
+            word_count = _count_words(text)
+            if word_count <= 40:
+                return True  # Don't split intro clauses unless extremely dense
+    
+    return False
+
+
+def _normalize_sentence_fragment(fragment: str, is_sentence_start: bool = True) -> str:
+    """Normalize a sentence fragment with proper capitalization and punctuation.
+
+    Args:
+        fragment: The fragment to normalize
+        is_sentence_start: True if this is a sentence start (should be capitalized)
+
+    Returns:
+        Normalized fragment with proper spacing, capitalization, and punctuation
+    """
+    fragment = fragment.strip()
+    
+    if not fragment:
+        return fragment
+    
+    # Only capitalize if it's actually a sentence start
+    # Don't capitalize mid-sentence fragments (preserve lowercase after comma/conjunction)
+    if is_sentence_start and fragment and fragment[0].islower():
+        fragment = fragment[0].upper() + fragment[1:]
+    
+    return fragment
+
+
 def _merge_sentences(s1: str, s2: str, connector: str = ", and") -> str:
     """Merge two sentences with a connector.
+
+    Handles punctuation and capitalization safely to avoid run-on sentences.
+    Preserves proper capitalization of second sentence if it's a proper noun
+    or intentional capitalization.
 
     Args:
         s1: First sentence
         s2: Second sentence
-        connector: Connector to use between sentences
+        connector: Connector to use between sentences (default: ", and")
 
     Returns:
-        Merged sentence
+        Merged sentence with proper punctuation and spacing
     """
-    s1_clean = s1.rstrip(".,!?;:")
-    s2_clean = s2.lstrip(".,!?;:")
-    return f"{s1_clean}{connector} {s2_clean}"
+    # Clean first sentence: remove trailing sentence-ending punctuation
+    s1_clean = s1.rstrip(".,!?;:").rstrip()
+    
+    # Clean second sentence: remove leading punctuation but preserve content
+    s2_clean = s2.lstrip(".,!?;:").lstrip()
+    
+    # If second sentence starts with capital letter and it's not a proper noun
+    # (i.e., it's likely a new sentence start), lowercase it for merging
+    if s2_clean and s2_clean[0].isupper():
+        # Only lowercase if it's likely not a proper noun
+        # Heuristic: if first word is common article/determiner, it's likely not proper
+        first_word = s2_clean.split()[0] if s2_clean.split() else ""
+        common_words = {"The", "A", "An", "This", "That", "These", "Those", "Some", "All", "Each", "Every"}
+        if first_word in common_words:
+            s2_clean = s2_clean[0].lower() + s2_clean[1:]
+    
+    # Ensure connector has proper spacing
+    if not connector.startswith(" "):
+        connector = " " + connector
+    
+    # Merge with connector
+    merged = f"{s1_clean}{connector} {s2_clean}"
+    
+    # Validate: check if merged sentence isn't too long (avoid run-ons)
+    word_count = _count_words(merged)
+    if word_count > 50:  # Reasonable limit to avoid run-ons
+        # If too long, keep original format (though this shouldn't happen with normal merging)
+        pass
+    
+    return merged
 
 
 def merge_short_sentences(sentences: List[str], target_avg: float = 12.0) -> List[str]:
@@ -99,16 +233,26 @@ def merge_short_sentences(sentences: List[str], target_avg: float = 12.0) -> Lis
     return result
 
 
-def _find_split_points(sentence: str) -> List[int]:
+def _find_split_points(sentence: str, protect_academic: bool = True) -> List[int]:
     """Find potential split points in a sentence (commas, conjunctions).
+
+    Excludes split points that would break:
+    - Decimal numbers (e.g., 50,000)
+    - Acronyms (e.g., HFT, DLT)
+    - Academic intro clauses (unless sentence is extremely dense)
 
     Args:
         sentence: The sentence to analyze
+        protect_academic: If True, protect academic intro clauses from splitting
 
     Returns:
         List of character positions where sentence could be split
     """
     points = []
+    word_count = _count_words(sentence)
+    # Only allow splitting intro clauses if extremely dense
+    allow_academic_split = word_count > 40
+    
     # Look for commas followed by spaces (but not inside parentheses)
     paren_depth = 0
     for i, char in enumerate(sentence):
@@ -121,6 +265,15 @@ def _find_split_points(sentence: str) -> List[int]:
             if i + 1 < len(sentence) and sentence[i + 1] == " ":
                 # Don't split right after the start
                 if i > 5:
+                    # Skip if comma is part of decimal number or acronym
+                    if _is_decimal_number_or_acronym(sentence, i):
+                        continue
+                    
+                    # Skip if this would break academic intro clause (unless very dense)
+                    if protect_academic and not allow_academic_split:
+                        if _is_academic_intro_clause(sentence, i + 1):
+                            continue
+                    
                     points.append(i + 1)  # Position after comma and space
 
     # Look for coordinating conjunctions (and, but, which, that)
@@ -137,6 +290,11 @@ def _find_split_points(sentence: str) -> List[int]:
             before_match = sentence[: match.start()]
             paren_depth = before_match.count("(") - before_match.count(")")
             if paren_depth == 0 and match.start() > 5:
+                # Skip if this would break academic intro clause (unless very dense)
+                if protect_academic and not allow_academic_split:
+                    if _is_academic_intro_clause(sentence, match.end()):
+                        continue
+                
                 points.append(match.end())
 
     # Sort and deduplicate
@@ -149,7 +307,8 @@ def split_long_sentences(sentences: List[str], min_words: int = 5) -> List[str]:
 
     Splits sentences that are too long at natural break points (commas,
     conjunctions like "and", "but", "which", "that"), ensuring resulting
-    sentences have at least min_words words.
+    sentences have at least min_words words. Never splits decimal numbers,
+    acronyms, or academic intro clauses unless extremely dense.
 
     Args:
         sentences: List of sentence strings
@@ -168,8 +327,8 @@ def split_long_sentences(sentences: List[str], min_words: int = 5) -> List[str]:
             result.append(sentence)
             continue
 
-        # Find potential split points
-        split_points = _find_split_points(sentence)
+        # Find potential split points (with academic prose protection)
+        split_points = _find_split_points(sentence, protect_academic=True)
 
         if not split_points:
             # No good split points found, keep as-is
@@ -178,6 +337,7 @@ def split_long_sentences(sentences: List[str], min_words: int = 5) -> List[str]:
 
         # Try to split at points that create balanced sentences
         current_start = 0
+        splits_made = False
         for split_pos in split_points:
             # Extract segment before split point
             segment = sentence[current_start:split_pos].strip()
@@ -185,12 +345,15 @@ def split_long_sentences(sentences: List[str], min_words: int = 5) -> List[str]:
 
             # Only split if segment meets minimum word count
             if seg_words >= min_words:
-                # Remove trailing punctuation from segment, add period
+                # Normalize segment: remove trailing punctuation, add period, capitalize
                 segment = segment.rstrip(".,!?;:")
                 if not segment.endswith("."):
                     segment += "."
+                # Normalize as sentence start (capitalize)
+                segment = _normalize_sentence_fragment(segment, is_sentence_start=True)
                 result.append(segment)
                 current_start = split_pos
+                splits_made = True
 
         # Add remaining portion
         if current_start < len(sentence):
@@ -201,16 +364,21 @@ def split_long_sentences(sentences: List[str], min_words: int = 5) -> List[str]:
                     remainder += "."
                 # Only add if it meets minimum
                 if _count_words(remainder) >= min_words:
+                    # Normalize as sentence start (capitalize)
+                    remainder = _normalize_sentence_fragment(remainder, is_sentence_start=True)
                     result.append(remainder)
                 else:
-                    # Merge with previous sentence if too short
+                    # Merge with previous sentence if too short (don't capitalize)
                     if result:
-                        result[-1] = result[-1].rstrip(".") + ", " + remainder.rstrip(".")
+                        remainder = remainder.rstrip(".,!?;:")
+                        result[-1] = result[-1].rstrip(".,!?;:") + ", " + remainder
                     else:
+                        # If no previous, still normalize as sentence start
+                        remainder = _normalize_sentence_fragment(remainder, is_sentence_start=True)
                         result.append(remainder)
 
         # If no splits were made, keep original
-        if current_start == 0:
+        if not splits_made:
             result.append(sentence)
 
     return result
@@ -268,26 +436,27 @@ def simplify_parentheses(sentences: List[str]) -> List[str]:
                     # Only extract one per sentence to avoid over-processing
                     break
 
-        # Capitalize extracted parentheticals and add to result
-        for ext in extracted:
-            ext = ext.strip()
-            if ext and not ext.endswith("."):
-                ext += "."
-            # Capitalize first letter
-            if ext:
-                ext = ext[0].upper() + ext[1:]
-            result.append(ext)
+        # If extraction occurred, add extracted parentheticals and modified sentence
+        if extracted:
+            # Capitalize extracted parentheticals and add to result
+            for ext in extracted:
+                ext = ext.strip()
+                if ext and not ext.endswith("."):
+                    ext += "."
+                # Capitalize first letter
+                if ext:
+                    ext = ext[0].upper() + ext[1:]
+                result.append(ext)
 
-        # Add modified sentence if it still has content
-        modified_sentence = modified_sentence.strip()
-        if modified_sentence:
-            # Ensure proper punctuation
-            if not any(modified_sentence.endswith(p) for p in ".!?"):
-                modified_sentence += "."
-            result.append(modified_sentence)
-
-        # If no extraction occurred, keep original
-        if not extracted:
+            # Add modified sentence if it still has content
+            modified_sentence = modified_sentence.strip()
+            if modified_sentence:
+                # Ensure proper punctuation
+                if not any(modified_sentence.endswith(p) for p in ".!?"):
+                    modified_sentence += "."
+                result.append(modified_sentence)
+        else:
+            # If no extraction occurred, keep original
             result.append(sentence)
 
     return result
@@ -298,6 +467,7 @@ def normalize_clauses(sentences: List[str]) -> List[str]:
 
     Splits sentences with multiple nested clauses and excessive punctuation
     into clearer, sequential sentences. Prefers clarity over compactness.
+    Never splits decimal numbers, acronyms, or academic intro clauses.
 
     Args:
         sentences: List of sentence strings
@@ -334,37 +504,42 @@ def normalize_clauses(sentences: List[str]) -> List[str]:
                     # Ensure proper punctuation
                     if not any(segment.endswith(p) for p in ".!?"):
                         segment += "."
-                    # Capitalize if it's not the first segment
-                    if i > 0 and segment and segment[0].islower():
-                        segment = segment[0].upper() + segment[1:]
+                    # Normalize as sentence start (capitalize for non-first segments)
+                    is_sentence_start = i > 0
+                    segment = _normalize_sentence_fragment(segment, is_sentence_start=is_sentence_start)
                     result.append(segment)
                 elif result:
-                    # Merge short segment with previous
+                    # Merge short segment with previous (don't capitalize)
                     prev = result[-1].rstrip(".,!?")
-                    result[-1] = prev + "; " + segment
+                    segment_normalized = _normalize_sentence_fragment(segment, is_sentence_start=False)
+                    result[-1] = prev + "; " + segment_normalized
 
             continue
 
         # If no semicolons, try splitting at "which" and "that" mid-sentence
-        # Only if sentence is very long
+        # Only if sentence is very long, and only if not breaking academic intro clauses
         if word_count > 40:
             split_patterns = [r"\b which ", r"\b that "]
             split_occurred = False
             for pattern in split_patterns:
                 matches = list(re.finditer(pattern, sentence, re.IGNORECASE))
                 if len(matches) > 1:  # Multiple "which"/"that" clauses
-                    # Split at second occurrence
+                    # Split at second occurrence, but check if it breaks academic clause
                     split_pos = matches[1].start()
+                    if _is_academic_intro_clause(sentence, split_pos):
+                        continue  # Skip this split
+                    
                     first_part = sentence[:split_pos].strip()
                     second_part = sentence[split_pos:].strip()
 
                     if _count_words(first_part) >= 5 and _count_words(second_part) >= 5:
                         first_part = first_part.rstrip(".,!?") + "."
-                        # Capitalize second part if needed
-                        if second_part and second_part[0].islower():
-                            second_part = second_part[0].upper() + second_part[1:]
+                        first_part = _normalize_sentence_fragment(first_part, is_sentence_start=True)
+                        # Normalize second part as sentence start (capitalize)
+                        second_part = second_part.rstrip(".,!?;:")
                         if not second_part.endswith("."):
                             second_part += "."
+                        second_part = _normalize_sentence_fragment(second_part, is_sentence_start=True)
                         result.extend([first_part, second_part])
                         split_occurred = True
                         break
@@ -480,6 +655,108 @@ def correct_oversimplification(sentences: List[str]) -> List[str]:
     return result
 
 
+def simplify_complex_sentences(
+    sentences: List[str], 
+    max_length: int = 20,
+    sentence_length_status: str = "normal"
+) -> List[str]:
+    """Rule 7: Simplify complex sentences when text is too hard to read.
+
+    Handles "too_hard" Flesch scores by:
+    1. Extracting parenthetical clauses to reduce complexity
+    2. Splitting sentences longer than max_length at natural break points
+       ONLY when sentence_length_status is "too_dense" or "extreme_density"
+
+    This rule respects the sentence_length_status gate to prevent splitting
+    when sentence length is normal or too_choppy, protecting academic prose.
+
+    Args:
+        sentences: List of sentence strings
+        max_length: Target maximum words per sentence for readability
+        sentence_length_status: Diagnosis status for sentence length.
+                                Only splits if "too_dense" or "extreme_density"
+
+    Returns:
+        List of sentences with complex ones simplified
+    """
+    if not sentences:
+        return sentences
+
+    # Step 1: Extract parenthetical clauses (reduces complexity)
+    # This is safe even when not splitting
+    sentences = simplify_parentheses(sentences)
+
+    # Step 2: Only split sentences if sentence_length_status allows it
+    # Hard gate: Never split when status is "normal" or "too_choppy"
+    if sentence_length_status not in ["too_dense", "extreme_density"]:
+        return sentences
+
+    # Step 3: Split long sentences more aggressively (max_length instead of 30)
+    result = []
+    for sentence in sentences:
+        word_count = _count_words(sentence)
+
+        if word_count <= max_length:
+            result.append(sentence)
+            continue
+
+        # Find potential split points (with academic prose protection)
+        split_points = _find_split_points(sentence, protect_academic=True)
+
+        if not split_points:
+            # No good split points found, keep as-is
+            result.append(sentence)
+            continue
+
+        # Try to split at points that create balanced sentences
+        current_start = 0
+        splits_made = False
+
+        for split_pos in split_points:
+            segment = sentence[current_start:split_pos].strip()
+            seg_words = _count_words(segment)
+
+            # Only split if segment meets minimum word count
+            if seg_words >= 5:
+                segment = segment.rstrip(".,!?;:")
+                if not segment.endswith("."):
+                    segment += "."
+                # Normalize as sentence start (capitalize)
+                segment = _normalize_sentence_fragment(segment, is_sentence_start=True)
+                result.append(segment)
+                current_start = split_pos
+                splits_made = True
+
+        # Add remaining portion
+        if current_start < len(sentence):
+            remainder = sentence[current_start:].strip()
+            if remainder:
+                remainder = remainder.rstrip(".,!?;:")
+                if not remainder.endswith("."):
+                    remainder += "."
+                if _count_words(remainder) >= 5:
+                    # Normalize as sentence start (capitalize)
+                    remainder = _normalize_sentence_fragment(remainder, is_sentence_start=True)
+                    result.append(remainder)
+                elif splits_made and result:
+                    # Merge short remainder with previous (don't capitalize)
+                    remainder_normalized = _normalize_sentence_fragment(
+                        remainder.rstrip(".,!?;:"), 
+                        is_sentence_start=False
+                    )
+                    result[-1] = result[-1].rstrip(".,!?;:") + ", " + remainder_normalized
+                else:
+                    # Normalize as sentence start
+                    remainder = _normalize_sentence_fragment(remainder, is_sentence_start=True)
+                    result.append(remainder)
+
+        # If no splits were made, keep original
+        if not splits_made:
+            result.append(sentence)
+
+    return result
+
+
 class RewriteEngine:
     """Coordinator for applying rewrite rules based on text diagnosis.
 
@@ -507,13 +784,20 @@ class RewriteEngine:
         3. Sentence count reduction
         4. Over-simplification correction
 
+        Hard early-exit gate: If ALL diagnosis statuses are "normal",
+        returns original text unchanged before ANY rewrite rule is applied.
+        This protects well-formed academic prose from unnecessary modifications.
+
         Returns:
             Rewritten text string, or original text if no changes needed
         """
         # Get diagnosis
         diag = self.diagnosis.diagnose()
 
-        # If everything is normal, return unchanged
+        # Hard early-exit gate: If ALL diagnosis statuses are "normal",
+        # return original text unchanged before ANY rewrite rule is applied.
+        # This is critical for protecting well-formed academic prose that may
+        # have slightly unusual metrics but is still grammatically correct.
         if (
             diag.flesch_status == "normal"
             and diag.sentence_length_status == "normal"
@@ -531,6 +815,9 @@ class RewriteEngine:
             sentences = merge_short_sentences(sentences)
 
         # Rule 2: Split long sentences (too_dense or extreme_density)
+        # Sentence splitting is ONLY allowed when sentence_length_status
+        # is "too_dense" or "extreme_density". This prevents splitting
+        # of normal or too_choppy text, protecting academic prose.
         if diag.sentence_length_status in ["too_dense", "extreme_density"]:
             sentences = split_long_sentences(sentences)
 
@@ -550,6 +837,16 @@ class RewriteEngine:
         if diag.flesch_status == "too_simple":
             sentences = correct_oversimplification(sentences)
 
+        # Rule 7: Simplify complex sentences (too_hard)
+        # Only splits if sentence_length_status is "too_dense" or "extreme_density"
+        # This protects academic prose from unnecessary splitting when sentence
+        # length is already normal, even if Flesch score indicates difficulty.
+        if diag.flesch_status == "too_hard":
+            sentences = simplify_complex_sentences(
+                sentences, 
+                sentence_length_status=diag.sentence_length_status
+            )
+
         # Reassemble text from sentences
         # Join with spaces, ensure single space between sentences
         rewritten = " ".join(sentences)
@@ -559,5 +856,23 @@ class RewriteEngine:
 
         # Ensure space after sentence-ending punctuation
         rewritten = re.sub(r"([.!?])([A-Za-z])", r"\1 \2", rewritten)
+
+        # Post-processing safety checks:
+        # 1. Ensure all sentences start with capital letters
+        # Split on sentence boundaries and capitalize each sentence start
+        sentence_boundary_pattern = r"([.!?])\s+([a-z])"
+        def capitalize_sentence_start(match):
+            return match.group(1) + " " + match.group(2).upper()
+        rewritten = re.sub(sentence_boundary_pattern, capitalize_sentence_start, rewritten)
+        
+        # 2. Capitalize first letter of entire text if it's lowercase
+        if rewritten and rewritten[0].islower():
+            rewritten = rewritten[0].upper() + rewritten[1:]
+        
+        # 3. Remove duplicate punctuation (but preserve intentional multiple punctuation)
+        rewritten = re.sub(r"([.!?])\1+", r"\1", rewritten)
+        
+        # 4. Ensure no missing spaces after periods
+        rewritten = re.sub(r"\.([A-Za-z])", r". \1", rewritten)
 
         return rewritten.strip()

@@ -5,12 +5,16 @@ from pathlib import Path
 # Handle import for both module and script execution
 try:
     from humanize import humanize
+    from humanize.data.dataset import HumanizeDataset
+    from humanize.text.simplify import LexicalSimplifier
 except ImportError:
     # When running as a script, add parent directory to path
     parent_dir = Path(__file__).parent.parent
     if str(parent_dir) not in sys.path:
         sys.path.insert(0, str(parent_dir))
     from humanize import humanize
+    from humanize.data.dataset import HumanizeDataset
+    from humanize.text.simplify import LexicalSimplifier
 
 
 def main():
@@ -43,6 +47,17 @@ def main():
         "--output",
         type=str,
         help="Output file path (writes to stdout if not provided)",
+    )
+    humanize_parser.add_argument(
+        "--lexical",
+        action="store_true",
+        help="Enable lexical simplification (reduces vocabulary complexity)",
+    )
+    humanize_parser.add_argument(
+        "--dataset",
+        type=str,
+        default="datasets/humanize.parquet",
+        help="Path to HumanizeDataset bundle file (default: datasets/humanize.parquet)",
     )
 
     # version command
@@ -84,8 +99,31 @@ def handle_humanize(args):
         # Read from stdin if no file or text argument provided
         text = sys.stdin.read()
 
-    # Apply humanization
+    # Apply humanization (structural rewriting)
     result = humanize(text)
+
+    # Apply lexical simplification if enabled
+    if args.lexical:
+        try:
+            dataset = HumanizeDataset.load(args.dataset)
+        except FileNotFoundError:
+            print(
+                f"Error: Dataset file not found: {args.dataset}\n"
+                "Please ensure the HumanizeDataset bundle file exists.\n"
+                "You may need to create it from your existing parquet files.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        except ValueError as e:
+            print(
+                f"Error: Invalid dataset file: {args.dataset}\n"
+                f"Details: {e}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        simplifier = LexicalSimplifier(dataset)
+        result = simplifier.simplify(result)
 
     # Write output
     if args.output:

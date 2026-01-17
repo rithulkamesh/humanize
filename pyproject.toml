@@ -16,7 +16,12 @@ classifiers = [
 authors = [{ name = "Rithul Kamesh", email = "hi@rithul.dev" }]
 maintainers = [{ name = "Rithul Kamesh", email = "hi@rithul.dev" }]
 
-dependencies = ["numpy>=1.26.0", "polars>=1.37.1", "uuid-utils>=0.13.0"]
+dependencies = [
+    "numpy>=1.26.0",
+    "polars>=1.37.1",
+    "pyarrow>=14.0.0",
+    "uuid-utils>=0.13.0",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -25,6 +30,7 @@ dev = [
     "black>=23.7.0",
     "ruff>=0.1.0",
     "mypy>=1.5.0",
+    "nltk>=3.9.2",
 ]
 
 web = ["fastapi>=0.104.0", "uvicorn>=0.24.0"]
