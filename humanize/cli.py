@@ -1,6 +1,16 @@
 from argparse import ArgumentParser
-from flesch import calculate_flesh_score
 import sys
+from pathlib import Path
+
+# Handle import for both module and script execution
+try:
+    from humanize import humanize
+except ImportError:
+    # When running as a script, add parent directory to path
+    parent_dir = Path(__file__).parent.parent
+    if str(parent_dir) not in sys.path:
+        sys.path.insert(0, str(parent_dir))
+    from humanize import humanize
 
 
 def main():
@@ -41,7 +51,7 @@ def main():
     )
 
     # version command
-    version_parser = subparsers.add_parser(
+    subparsers.add_parser(
         "version",
         help="Show version information",
     )
@@ -54,38 +64,8 @@ def main():
 
     if args.command == "humanize":
         handle_humanize(args)
-    elif args.command == "info":
-        handle_info()
     elif args.command == "version":
         handle_version()
-
-
-def handle_info():
-    """Display system information."""
-    info_text = """
-Humanize - Rule-Based Text Humanization
-
-Features:
-  • Analyzes structural features like sentence length and rhythm
-  • Compares against open reference examples of human writing
-  • Applies deterministic, rule-based transformations
-  • Preserves original meaning while improving naturalness
-  • Fully offline and transparent
-
-What it does NOT do:
-  • Does not generate text from scratch
-  • Does not require API keys or paid services
-  • Does not train models on user input
-  • Does not require internet connection
-
-Optional Features:
-  • Local language model support (disabled by default)
-  • Deterministic transformation pipeline
-  • Open datasets for reference data
-
-License: GNU General Public License v3 (GPLv3)
-"""
-    print(info_text)
 
 
 def handle_version():
@@ -106,15 +86,23 @@ def handle_humanize(args):
     elif args.text:
         text = args.text
     else:
-        print("Error: No input provided. Use -f/--file or pass text as argument.", file=sys.stderr)
-        sys.exit(1)
+        # Read from stdin if no file or text argument provided
+        text = sys.stdin.read()
 
-    # TODO: Implement humanization logic
+    # Apply humanization
+    result = humanize(text)
 
-    out_data = {"text": text, "flesch_score": calculate_flesh_score(text)}
-
-    print(out_data)
-    sys.exit(1)
+    # Write output
+    if args.output:
+        try:
+            with open(args.output, "w") as f:
+                f.write(result)
+        except IOError as e:
+            print(f"Error writing to file: {e}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        # Print only the final output text to stdout
+        print(result, end="")
 
 
 if __name__ == "__main__":
