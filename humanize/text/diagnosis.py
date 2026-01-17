@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from typing import Dict
 
+from humanize.text.analyzer import TextAnalyzer
+
 
 @dataclass
 class DiagnosisResult:
@@ -28,7 +30,7 @@ class TextDiagnosis:
     empirically derived human writing ranges. Does not modify text or perform rewriting.
     """
 
-    def __init__(self, analyzer):
+    def __init__(self, analyzer: TextAnalyzer):
         """Initialize with a TextAnalyzer instance.
 
         Args:
